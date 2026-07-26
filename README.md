@@ -2,7 +2,7 @@
 - 
 Dear Sir/Madam,
 
-I have completed B.Tech in computer science from JNTU university with 18+ years of professional experience. Having supervised challenging software applications and acquired deep knowledge in cutting edge microsoft technologies, in all my previous positions, I am an ideal candidate for the technical position at your esteemed organization.
+I have completed B.Tech in computer science from JNTU university with 21+ years of professional experience. Having supervised challenging software applications and acquired deep knowledge in cutting edge microsoft technologies, in all my previous positions, I am an ideal candidate for the technical position at your esteemed organization.
 
 As a lead engineer at Capgemini, I have designed and developed the core of many software applications, trained new associates and involved in multi national clients meetings.
 
