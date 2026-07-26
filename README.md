@@ -1,6 +1,8 @@
 - 👋 Hi, I’m @suren221980
 - 
-Dear Sir/Madam,
+Hi,
+
+I am Surender Ameelpur,
 
 I have completed B.Tech in computer science from JNTU university with 21+ years of professional experience. Having supervised challenging software applications and acquired deep knowledge in cutting edge microsoft technologies, in all my previous positions, I am an ideal candidate for the technical position at your esteemed organization.
 
@@ -14,9 +16,9 @@ Cordially,
 
 Surender A,
 
-Phone: +91 9885559472 
+Phone: +91 7702956135 
 
-e-mail: ameelpur.surender.cpp@gmail.com
+e-mail: ameelpur.surender@gmail.com
 
 <!---
 suren221980/suren221980 is a ✨ special ✨ repository because its `README.md` (this file) appears on your GitHub profile.
