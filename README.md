@@ -1,26 +1,11 @@
-- 👋 Hi, I’m @suren221980
-- 
-Hi,
+### Hi, I'm Surender 👋
 
-I am Surender Ameelpur,
+Senior Software Engineer with 21+ years of experience across **C++**, **C#/.NET**, and enterprise software architecture — currently building scientific software at **Thermo Fisher Scientific**.
 
-I have completed B.Tech in computer science from JNTU university with 21+ years of professional experience. Having supervised challenging software applications and acquired deep knowledge in cutting edge microsoft technologies, in all my previous positions, I am an ideal candidate for the technical position at your esteemed organization.
+- 🔭 Currently working on C++/.NET applications for scientific instrumentation
+- 🌱 Background spans Health care, financial systems, industrial engineering, and regulated software
+- ☁️ Microsoft Azure Fundamentals (AZ-900) certified | Six Sigma Process Professional
+- 📍 Based in Hyderabad, India — open to Senior/Lead roles in Australia & New Zealand (sponsorship)
+- 💬 Ask me about C++17/20, .NET Core, C#, or system architecture
 
-As a lead engineer at Capgemini, I have designed and developed the core of many software applications, trained new associates and involved in multi national clients meetings.
-
-I have enclosed my resume for your perusal. I would like the opportunity to meet and discuss this position. please feel free to call me on my contact number given below or email me.
-
-Thank you for your time and consideration.
-
-Cordially,
-
-Surender A,
-
-Phone: +91 7702956135 
-
-e-mail: ameelpur.surender@gmail.com
-
-<!---
-suren221980/suren221980 is a ✨ special ✨ repository because its `README.md` (this file) appears on your GitHub profile.
-You can click the Preview link to take a look at your changes.
---->
+📫 Reach me: ameelpur.surender@gmail.com | [LinkedIn](https://linkedin.com/in/surender-ameelpur-cpp) | mobile: +91 7702956135
