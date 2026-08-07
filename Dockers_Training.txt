@@ -1,0 +1,1053 @@
+**************************   O C P for SMB scale *********************************************
+
+oc label node worker0.suren.cp.fyre.ibm.com/designation=quorum
+oc label node worker1.suren.cp.fyre.ibm.com/designation=quorum
+oc label node worker.suren.cp.fyre.ibm.com/designation=quorum
+
+oc apply -f https://raw.githubusercontent.com/IBM/ibm-spectrum-scale-container-native/v5.1.1.3/generated/mco/ocp4.8/mco_x86_64.yaml
+oc get MachineConfigPool
+
+ oc get nodes -lnode-role.kubernetes.io/worker= \
+ -ojsonpath="{range .items[*]}{.metadata.name}{'\n'}" |\
+ xargs -I{} oc debug node/{} -T -- chroot /host crio-status config | grep pids_limit
+
+oc get nodes -lnode-role.kubernetes.io/worker= \
+-ojsonpath="{range .items[*]}{.metadata.name}{'\n'}" |\
+xargs -I{} oc debug node/{} -T -- chroot /host sh -c "rpm -q kernel-devel"
+
+
+[ THIS IS FOR 3 NODE CLUSTER , NOT ADVICES BY SPECTRUM SCALE -----------------------------
+oc get schedulers.config.openshift.io cluster -ojson | jq -r ".spec.mastersSchedulable"
+
+oc patch schedulers.config.openshift.io cluster --type='json' \
+-p='[{"op": "replace", "path": "/spec/mastersSchedulable", "value":true}]'
+
+
+   curl https://raw.githubusercontent.com/IBM/ibm-spectrum-scale-container-native/v5.1.1.3/generated/mco/ocp4.8/mco_x86_64.yaml > master_mco.yaml
+cat master_mco.yaml | sed 's/worker/master/g' | oc apply -f -
+
+ -------------------------------------------------------------NOT ADVICES BY SPECTRUM SCALE ]
+
+---obtain entiltlment from https://www.ibm.com/docs/en/scalecontainernative?topic=registry-cloud-container-icr-entitlement
+
+echo -n "cp:REPLACE_WITH_GENERATED_ENTITLEMENT_KEY" | base64 -w0
+
+---Create an authority.json
+{
+  "auth": "REPLACE_WITH_BASE64_ENCODED_KEY_FROM_PREVIOUS_STEP",
+  "username":"cp",
+  "password":"REPLACE_WITH_GENERATED_ENTITLEMENT_KEY"
+}
+
+oc get secret/pull-secret -n openshift-config -ojson | \
+jq -r '.data[".dockerconfigjson"]' | \
+base64 -d - | \
+jq '.[]."cp.icr.io" += input' - authority.json > temp_config.json
+
+
+oc set data secret/pull-secret -n openshift-config --from-file=.dockerconfigjson=temp_config.json
+
+oc get secret/pull-secret -n openshift-config -ojson | \
+jq -r '.data[".dockerconfigjson"]' | \
+base64 -d -
+
+oc get nodes
+
+--vi registrymirror.yaml
+apiVersion: operator.openshift.io/v1alpha1
+ kind: ImageContentSourcePolicy
+ metadata:
+   name: icr-mirror
+ spec:
+   repositoryDigestMirrors:
+   - mirrors:
+     - example.io/subdir
+     source: cp.icr.io/cp/spectrum/scale
+   - mirrors:
+     - example.io/subdir
+     source: icr.io/cpopen
+
+ oc apply -f registrymirror.yaml
+
+-- Once all nodes have finished updating and rebooting, verify that the ImageContentSourcePolicy is applied by entering the oc debug command to query the mirrors on the host nodes.
+
+[This is for pulling image form remote to local registry...skkiping
+skopeo login cp.icr.io
+]
+
+oc label node worker0.suren.cp.fyre.ibm.com scale.spectrum.ibm.com/designation=quorum  [Here what is scale.spectrum.ibm.com ?]
+oc describe node worker0.suren.cp.fyre.ibm.com
+[To remove the label ->] oc label node worker0.suren.cp.fyre.ibm.com scale.spectrum.ibm.com/designation-
+
+Memory:
+oc annotate nodes worker0.suren.cp.fyre.ibm.com scale.spectrum.ibm.com/memory="50G"
+Cpu:
+oc annotate node worker0.suren.cp.fyre.ibm.com scale.spectrum.ibm.com/cpu="5"
+
+systemctl stop firewalld; sleep 2; systemctl disable firewalld 
+
+
+(switch to SMB node or single node)
+5.1.1.3 Creatinhg Operator User and Group 
+------------------------------------
+/usr/lpp/mmfs/gui/cli/lsusergrp SMBContainerOperator  [to verify]
+/usr/lpp/mmfs/gui/cli/mkusergrp SMBContainerOperator --role containeroperator
+/usr/lpp/mmfs/gui/cli/lsuser | grep SMBContainerOperator
+/usr/lpp/mmfs/gui/cli/mkuser cnsa_storage_gui_SMBuser -p cnsa_storage_gui_SMBpassword -g SMBContainerOperator -e 1
+
+5.1.1.4
+/usr/lpp/mmfs/gui/cli/mkusergrp CsiAdmin --role csiadmin
+/usr/lpp/mmfs/gui/cli/mkuser csi-storage-gui-user -p  csi-storage-gui-password -g CsiAdmin
+mmlsfs fs1 --perfileset-quota
+mmchfs fs1 -Q yes
+mmlsfs fs1 -Q
+mmchconfig enforceFilesetQuotaOnRoot=yes -i
+mmchconfig controlSetxattrImmutableSELinux=yes -i
+mmchfs fs1 --filesetdf
+
+(switch back to OCP cluste )
+
+oc apply -f https://raw.githubusercontent.com/IBM/ibm-spectrum-scale-container-native/v5.1.1.3/generated/installer/ibm-spectrum-scale-operator.yaml
+oc get pods -n ibm-spectrum-scale-operator [verify operator pod running ]
+oc get pods -n ibm-spectrum-scale-csi [verify csi pod running ]
+
+
+Deploy the operator
+---------------------
+oc apply -f https://raw.githubusercontent.com/IBM/ibm-spectrum-scale-container-native/v5.1.1.4/generated/installer/ibm-spectrum-scale-operator.yaml
+ oc get pods -n ibm-spectrum-scale-operator
+ oc get pods -n ibm-spectrum-scale-csi
+
+Configure CR 5.1.1.4
+-------------
+curl -fs https://raw.githubusercontent.com/IBM/ibm-spectrum-scale-container-native/v5.1.1.4/generated/scale_v1beta1_cluster_cr.yaml > scale_v1beta1_cluster_cr.yaml || echo "Failed to curl Cluster CR"
+
+    # hostAliases:
+    #   - hostname: example.com
+    #     ip: 10.0.0.1
+       - hostname: worker0.suren.cp.fyre.ibm.com
+         ip: 10.17.16.122
+       - hostname: worker1.suren.cp.fyre.ibm.com
+         ip: 10.17.31.73
+       - hostname: worker2.suren.cp.fyre.ibm.com
+         ip: 10.17.31.159
+
+oc apply -f ./scale_v1beta1_cluster_cr.yaml
+
+
+cluster
+-------
+  license:
+    accept: true
+    license: data-access
+
+
+spec:
+  daemon:
+    ...
+    nodeSelector:
+      node-role.kubernetes.io/worker: ""
+      app.kubernetes.io/component: "scale"
+
+
+Set insecureSkipVerify: true in [vi scale_v1beta1_cluster_cr.yaml]
+
+Creating secrets for storage cluster GUI
+----------------------------------------
+oc create secret generic cnsa-remote-mount-storage-cluster-smb --from-literal=username='cnsa_storage_gui_SMBuser' \
+--from-literal=password='cnsa_storage_gui_SMBpassword' -n ibm-spectrum-scale
+
+oc create secret generic csi-remote-mount-storage-cluster-smb --from-literal=username=csi-storage-gui-SMBuser --from-literal=password=csi-storage-gui-SMBpassword -n ibm-spectrum-scale-csi
+
+oc label secret csi-remote-mount-storage-cluster-smb -n ibm-spectrum-scale-csi product=ibm-spectrum-scale-csi
+===========================================================================================================
+============================================================================================================
+===============================================================================================================
+
+
+Agenda:
+Installing dockers (1.12)
+working with containers
+working with Apps
+
+Desktop install | Server install | Cloud install (comming soon)
+
+Windows: good for Test,Dev not for Prod.
+         Hyper-v-vm (which is a linux)
+         Native Docker for Win10 is comming
+         
+Linux (ubuntu): wget -qO - https://get.docker.com|sh
+                docket version
+                docker info
+                         (OR)
+                https://docs.docker.com/engine/install/centos/
+                
+What is containers:
+
+VM Model: slices all physical cpu, Ram ,Storage into equal portions. | hypervisor does physical virtualization of resoucres
+Container model: It grabs and slices OS's resources pid's, storage, Network stack, Filesystem and are lightweight than VM's | Containers engines like dockers does OS virtualization.
+
+https://docs.docker.com/engine/install/ubuntu/ (download docker from here)
+
+Docker run: (cmd: start containers)
+===========
+docker version 
+=>gives client and server versions and models running locally on machine loged onto
+
+docker info
+=>gives how many container, images we have and versdon info.
+
+docker run <image>
+=> example docker run hello-world, will start a container from the dockers local store or search from docker's hub registry and pulls it to Deamon (server) and runs for client.
+
+docker ps   (cmd: list running containers)
+=> no contaimners running as of now
+
+docker ps -a    (cmd: list running containers; -a list stoped containers also)
+=> list also any exited containers.
+
+docker images   (cmd: list images on Docker host)
+=> to see all the images we have and its info.
+=>example hello-world from above
+
+docker stop (cmd: stops running containers)
+docker rm    (cmd: removed deleted/stopped containes)
+
+
+Docker engine = docker client + Docke server
+
+images = stoped containes
+Containers = running images
+
+step 1 :docker pull alpine | ubuntu | ubuntu:14.04   (cmd : copies images to Docker Host)
+step 2 :docker images  
+step 3 :docker rmi ubunt:14.04   (cmd: remove images from Docket Hosts)
+
+container life cycle:
+====================
+
+                           container Running (UP)
+
+        docket start <container>                   docker stop <container>
+                         
+                           contaner stopped (exit)
+
+Contaners are loike VM's, which persiste the data even if you stop and start etc.
+
+docker run -d            --name  web -p 80:8080   <Images>
+          (start the docker           
+           in detatched mode)
+
+docker ps, will now list "web" from above
+docker stop web
+docker start web
+
+docker run -it --name temp ubunu:latest /bin/bash
+
+docker stop $(docker ps -aq) {-a list all containers -q give container id quitely}{This is for container}
+docker rm $(docker ps -aq)
+docker ps -a (for cheksing)
+
+docker rmi $(docker images -q)  {for images} {removes all layers}
+docker images (for cheksing)
+
+docker container prune (Ths will remove all stoped containers)
+ 
+recap [ docker run -d /- it <image> ; here -d= detached, -it= interactive ]
+
+
+swarm mode and microservices
+=============================
+plan:
+build a swarm
+start using servcies, scale, update them
+deploy a multiservice app with stacks and bundles
+
+docker 1.12 and later support Swarm
+
+Swarm mode = true native clutering
+definition : A collection of Docker engines joined together in a cluster is called Swarm.
+
+mnager node maintain the swarm, H/A recom 3/5, only one leader.
+Worker node execute tasks
+Services:
+Task: unit of work assigned to Workers ~ containers
+
+Building a Swarm:
+----------------
+3x m/c Mngrs and 3x m/c Wrkrs
+
+docker swarm init --advertise-addr 172.31.223.23:2377 --listen-addr 172.32.23.441:2377
+Engine port:2375
+secure egngin eport: 2376
+Swarm port: 2377
+
+docker swarm join-token manager
+docker swarm join-token worker
+docker node ls (Works only on Manager node)
+docker node promote (makes a node mngr) 
+
+Services:
+----------
+dockr servcie cretaae --name psight1 -p 8080:8080 --replicas 5 <images>
+              -------
+docker service ls
+docker service ps -<service_name>
+docker service inspect -<service_name>
+
+the load balancer in container-aware load balancer is called "Routing mesh"
+
+docker service scale psight=7
+               -----
+docker service update  --replicas 10  psight1    (this will udate the ~ version v1 from say v2)
+               -------
+
+docker node ls (cmd: will give status of all nodes and mngr status)
+docker node ps <node>  | docker node ps <ip address>
+
+remark: A new node added to swamp does get the task load balanced.
+
+docker service rm psight1
+
+Docker create network:
+----------------------
+docker network create -d overlay ps-net
+
+docker network ls
+
+dockr servcie cretaae --name psight1 --network ps-net -p 8080:8080 --replicas 5 <images>
+docker service inspect --pretty psight2
+
+docker service update --image <image_name>:v2 --update-parallelism 2 --update -delay 10s psight2
+
+docker service ps psight2 | grep :v2
+
+Stacks and Bundles: (needs docker min 1.12 experimental)
+-------------------
+
+stack ~ application comprises multiple srvices 
+       -deployed from distibuted application bundle (DAB)
+
+wget -q0- https://experimental.dockers.com/ |sh
+
+docker-compose: can convert yaml fil to DAB file.
+
+docker push <image-name>
+
+docker-compose bundle
+
+docker stack deploy <name ofDAB file>
+
+docekr stack tasks <stack_name>
+
+docekr stack rm <stackname>
+
+docekr sevice ls
+
+
+
+
+======================================================
+
+k8s
+=====
+
+kubectl run [pod-name] --image=nginx:alpine
+k get pods
+k port-forward [pod-name] 8080:80
+k delete pod [pod-name]
+
+k version 1.18+  "run" creates the pod
+
+using pod yml:
+k create -f file.pod.yml  --dry-run --validate=true
+
+save config for future use
+k create -f file.pod.yml --save-config
+
+to delete pod using yml
+k delete -f file.pod.yml
+
+Deploymnts:
+----------
+k create -f nginx.deploymnet.yml --save-config
+k describe [pod | deployment] [pod-name | deployment-name]
+k apply -f nginx.pod.yml
+
+k get deployment --show-labels
+k get deployment -l app=nginx  (-l ia a label)
+
+k scale deploymnet [deploymnt-name] --replicas=5
+k scale -f file.deployment.yml --replicas=5
+
+
+put containts on container:
+
+
+Services:
+=========
+
+k create -f file.service.yml
+k apply -f file.service.yml
+
+logs - troubshooting
+-----
+k logs [pod-name]
+k logs [pod-name] -c [container-name] (id multiple containers)
+k logs -p [pod-name] (previous running pod)
+k logs -f [pod-name] (stream a pod log)
+
+k describe pod [pod-name]
+k get pod [pod-name] -o yaml
+k get deployment [deployment-name] -o yaml
+k exec [pod-name] -it sh
+
+
+
+====================   Exercise    ==============================================
+---------------------common-----------------------------
+vi /etc/fstab
+
+sudo modprobe overlay
+sudo modprobe br_netfilter
+
+cat <<EOF | sudo tee /etc/modules-load.d/containeerd.conf
+overlay
+br_netfilter
+EOF
+
+cat <<EOF | sudo tee /etc/sysctl.d/99-kubernetes-cri.conf
+net.bridge.bridge-nf-call-iptables = 1 
+net.ipv4.ip_forward = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+EOF
+
+sudo sysctl --system
+
+sudo apt-get update
+sudo apt-get install -y containerd
+
+sudo mkdir -p /etc/containerd
+sudo containerd config default | sudo tee /etc/containerd/config.toml
+
+sudo vi /etc/containerd/config.toml (search for .containerd.runtimes.runc and at bottom add these two ines)
+
+	[plugins."io.containerd.grpc.v1.cri".containerd.runtime.runc.options]
+		SystemdCgroup = true
+
+
+sudo systemctl restart containerd
+
+curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
+
+#add k8s apt respo
+sudo bash -c 'cat <<EOF >/etc/apt/sources.list.d/kubernetes.list
+deb https://apt.kubernetes.io/ kubernetes-xenial main
+EOF'
+
+sudo apt-get update
+apt-cache policy kubelet | head -n 20
+
+VERSION=1.22.2-00
+sudo apt-get install -y kubelet=$VERSION kubeadm=$VERSION kubectl=$VERSION
+sudo apt-mark hold kubelet kubeadm kubectl containerd
+
+sudo systemctl status kubelet.service
+sudo systemctl status containerd.service
+
+sudo systemctl enable kubelet.service
+sudo systemctl enable containerd.service
+
+---------------------common-----------------------------
+
+Bootstraping a cluster with kubeadm
+--------------------------------------
+
+creating cluster:  >>->>
+=================
+wget https://docs.projectcalico.org/manifests/calico.yaml
+
+vi calico.yaml
+ ( observe the - name)
+
+kubeadm config print init-defaults | tee ClusterConfiguration.yaml
+
+sed -i 's/ advertiseAddress: 1.2.3.4/ advertiseAddress: 172.16.94.10/' ClusterConfiguration.yaml
+sed -i 's/ criSocket: \/var\/run\/dockershim\.sock/ criSocket: \/run\/containerd\/containerd\/.sock/' ClusterConfiguration.yaml
+
+
+cat <<EOF | cat >> ClusterConfiguration.yaml
+---
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+cgroupDriver: systemd
+EOF
+
+sudo swapoff -a  (we resolved it)
+
+sudo kubeadm init --config=ClusterConfiguration.yaml
+sudo kubeadm init --cri-socket /run/containerd/containerd.sock
+
+
+[--after o/p success]
+
+mkdir -p $HOME/.kube
+sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+#1 - Cretaing a pod n/w, deploy yaml file for pod n/w
+kubectl apply -f calico.yaml
+
+kubectl get pods --all-namespaces
+kubectl get pods --all-namespaces --watch
+kubectl get nodes
+
+sudo systemctl status kubelet.service
+ls /etc/kubernetes/manifests
+
+	sudo more /etc/kubernetes/manifests/etcd.yaml
+	sudo more /etc/kubernetes/manifests/kube-apiserver.yaml
+ls /etc/kubernetes
+
+
+Join worker node to cluster:  >>->>
+============================
+Do the ------common-------section from above.
+[and join the node to cluster. here fore hope back to cluster node ]
+----this is on master /control plane node ---------
+kubeadm token list 
+
+kubeadm token create (to generat a new token)
+
+openssl x509 -pubkey -in .etc/kubernetes/pki/ca.crt | openssl rsa -pubin -outform der 2>/dev/null | openssl dgst -sha256 -hex | sed 's/^.*//'
+
+kubeadm token create --print-join-command
+(cpy the o/p kubeadmin join string, into clipboard and hope back to individual worker node) 
+
+----till here is for master /control plane node ---------
+
+[note: Now hope back to worker node]
+and paste the kubeadm string wih using sudo like
+
+sudo  kubeadm join ......--token... --discovery.....
+
+
+[now hope back agai to cpl node ]
+
+kubectl get nodes
+kubectl get pods --all-namespaces --watch
+kubectl get nodes
+======================================================================================
+
+Working with k8s cluster >>->>
+========================
+kubectl command:
+apply/create | run | explain | delete | get | describe | exec | logs
+
+k8s resources (objects)
+nodes (no) | pods (po) | service (svc)
+
+output: kubectl's o/p format.
+wide | yaml | json | dry-run
+
+synta: k [cmd] [type] [name] [flags]  
+
+(flags ex: --output=yaml | --image=nginx )
+
+[hope onto cpl/master node]
+kubctl  cluster-info
+K get nodes
+K get nodes -o wide
+
+kubectl get pods --namespaces kube-system -o wide
+k api-resource | more
+k api-resource | grep pod
+
+k explian pod| pod.spec | pod.spec.container | pod --recursive || more
+
+k describe nodes|pods|services  [name-of-resource] | more
+
+------install bash auto compltion 
+sudo apt-get install -y bash-completion
+echo "source <(kubectl completion bash)" >> ~/.bashrc
+source ~/.bashrc
+eg:  kubectl g[tab][tab] po[tab][tab] --all[tab][tab]
+
+Manifest using dry-run
+-----------------------
+k create deployment hello-world \
+   --image=gcr.io/google-samples/hello-app:1.0 \
+   --dry-run=client -o yaml > deployment.yaml.
+
+[This will not send the cmd to API server, but write the manifest into depltoment.yaml file ]
+
+(k apply -f deployment.yaml)
+
+Imperative deploymnet
+------------------------
+
+k create deployment hello-world \
+   --image=gcr.io/google-samples/hello-app:1.0 
+
+k run hello-worl-pod --image=gcr.io/google-samples/hello-app:1.0
+
+k get pods |&&| k get pods -o wide
+
+[hope back to individual node c1-node3]
+sudo crictl --runtime-endpoint unix:///run/containerd/containerd.sock ps
+
+
+[Note: When docker is the container runtime, use
+sudo docker ps
+]
+
+[Hope back again to control plane cpl ]
+
+k logs hello-world-pod
+
+[this will start a process inside container inside a pod. ]
+k exec -it hello-worl-pod -- /bin/sh
+(this will attach a shell and  give us a interactive, where we can give cmds
+  hostname
+  ip addr
+)
+
+k get deploymnet hello-word
+k get replicaset
+k get pods
+
+k describe deploymnet hello-word | more 
+k describe replicaset hello-word | more
+k describe pods hello-word[tab][tab] | more
+
+
+Exposig and accessing services: >>->>
+==================================
+9expose deployment as service )
+
+k expose deployment hello-world \
+--port=80 \
+--target-port=8080
+
+k get service hello-world
+k describe service hello-world
+
+(Access service inside cluster)
+curl http://service IP:port
+
+(for monitoring purpose only, without runtime infomation)
+k get deployment hello-word -o yaml | more
+k get deployment hello-word -o json | more
+
+Lets delete all
+=============
+kubectl get all
+kubectl delete service hello-world
+kubectl delete deployment hello-world
+kubectl delete pod hello-world-pod
+kubectl get all (only single service for k8s available)
+
+
+
+Declartive deployment
+------------------------
+
+k create deployment hello-world \
+   --image=gcr.io/google-samples/hello-app:1.0 \
+   --dry-run=client -o yaml > deploymnet.yaml
+
+/k apply -f deploymnet.yaml  (declarive deploy)
+
+k expose deployment  hello-world \
+--port=80 --target-port=8080 \
+--dry-run=client -o yaml > service.yaml
+
+k apply -f service.yaml
+deploymnet.yaml
+k get all
+
+[change to an existing code in cluster ]
+vi deploymnet.yaml (chnage replica set to 20 and save file)
+
+k apply -f deploymnet.yaml
+k get all
+k get service hello-world
+curl http://ClusterIp   (give n times )
+
+scalling other ways
+(1)
+k edit deployment hello-world   (edit the replica set here to 20)
+k get deployment hello-world   (you will see the replica set changed to 20)
+
+(2)
+k scale deployment hello-world --replicas=30
+k get deployment hello-world
+
+(lets clean up)
+k delete deployment hello-world
+k delete service hello-world
+k  get all
+
+
+=================================================================================
+
+Another training Dan Wahlin
+---------------------------------
+
+k create -f file.deployment.yml --save-config  | --record
+k apply -f file.deplment.yml | -record (to record the cmd in deplmnt revisi history)
+
+zero-down time:
+-----------
+rolling update | blue-gren deplomnt | canary deplu | rollback
+
+defining rolling update  deploy
+-----------------------
+
+spec:
+replicas=3
+minReadySec:1 \ progressDeslineSec:60 \ revisionHstoryLinit:5
+startegy:
+type: RollingUpdate
+      maxSurge: 1 \ axUnavailable:1
+
+cmd:
+k rollout status deployment my-nginx
+
+Rolling-back 
+--------
+k rollout history deploymnet [depl-name]
+k rollout history deploymnet [depl-name] --revision=2
+
+k rollout undo deployment [depl-name] --to-revision=1 (this will undo install revisn 2)
+
+canariy rollback
+----------------
+
+In deployment yml filewe have
+metadata:
+   name: canary-deployment
+
+Blue-Green
+----------
+we will have two identical enviromnts. one env is continued with public service + blue test service and second env is used for green tets service. Once green test is vialbe, then all thetrafic to gren test service are lashed.
+
+kind:service
+metadata:
+ role: bluetest
+ env:test
+spec:
+type:loadbalancer
+ role:blue
+
+port:
+port:9000 \ tarhgetport:80
+
+
+~~~~~~~~~~~~~~~~~~~~~~~~
+kind:service
+metadat:
+ role:blue
+ env:prod
+port:80 \targetport:80
+
+~~~~~~~~~~~~~~~~~~
+kind:Deployment
+selector:
+app:ngnx
+role:blue
+
+=====================================================
+
+Running jobs and cronjobs
+------------------------
+jobs cretaed 1 or 2 pods that perform a task and terminates, unlike standard pods which run indefinetly.
+(eg: databases backups, caching, etc..,)
+
+Cronjobs cretae 1 or 2 pods that perform a task in schedule basis. jobs are not deleted.
+
+Monitoing and troubleshooting
+------------------------------
+
+=======================================================================================================================
+
+
+
+
+Session by Anthony E.
+=====================
+
+k diff -f newdeployment.yaml  (this will print the difference in yaml)
+
+vi ~/.kube/config
+(go to - name: kubernetes-admin (chnage to kubernetes-admin1) and see what happens)
+
+k create namespace playground1
+more namespace.yaml
+k apply -f namespace.yaml
+k get namespaces
+k get pods --namespace (-n) playground
+
+k delete namespaces playground 
+(This will delete all pods, deploymnets and replicaset, infact delete anything in that namespace)
+
+
+Labels allow us to query k8s resource.
+
+k get pods --showlabels
+k get pods --selector tier=prod
+k get pods -1
+
+k describe endpoints hello-world
+
+namespaces: When u want to put a boundary around resources, security or naming
+
+Labels: When u want to act on objects in groups or influence k8s operations.
+
+Annotations: When u want to add additional information about a resource.
+
+To check the process in worker node
+----------------------------------
+ssh root@machine
+ps -aux | grep hello-world
+
+on master plane
+k port-forward our-pod-name 80:8080
+k port-forward our-pod-name 8080:8080 &
+
+curl http://localhost:8080
+
+
+working with static pods:
+--------------------------
+
+k run hello-worl --image=gcr.io/google-samples/hello-app:2.0 --dry-run=client \
+-o yaml --port=8080
+(copy the code from here)
+
+ssh root@c1-node2
+#find static pod name
+sudo cat /var/lib/kubelet/config.yaml
+#cretae a pod  manifest in staticPodPath.. paste in manifest we ctreated above
+sudo vi /etc/kubernetes/manifest/mypod.yaml
+(paste the code to here)
+ls /etc/kubernetes/manifest
+exit
+(hope back to control master node)
+
+k get pods -o wide
+
+(jumpback to c1-node2)
+ssh root@c1-node2
+sudo rm /etc/kubernetes/manifest/mypod.yaml
+exit 
+
+(jump back to master node)
+k get pods
+(nothing is there, static pod got removed)
+
+multi-container pods:
+====================
+when we have tightly coupled applications. Usually one process is a consumer of other process.
+
+Defining pod health: using container probes
+===========================================
+1. liveness probe: continously run diagnostic check. kubelet restrats the cotainer per policy
+2. readiness probe: continously run diagnostic check to determine if containers are ready to serve. won't receive trafiic untill it succeeds.
+3. startup probe:  Ensure all pods are ready. compliments livenes and readines probes.
+
+ spec:
+  containers:
+....
+    liveness Probe:                         Readiness Probe:            Startup Probe:
+       tcpSocket:                             .....
+          port:8080
+         initialDelaySecs: 15               initiaDelaySecs: 5             initalDelay Secs: 10
+         periodSecd: 20                      periodSecs:10                   peridoSecons: 5
+
+
+k get events --watch &
+clear
+more container-probes.yaml
+k apply -f container-probes.yaml
+
+    
+
+========================================================
+
+Docker 
+
+Docker build (require a docker file to create container images)
+(eg: docker build -t my-app:v1 /path/todir)
+                  tag repo tag location
+image: list all images
+run : runs a contaier
+push and pull cmds
+
+docker is also a runtime. 
+
+h/w -> OS -> container-runtime -> App1, App2, App3
+thereis yet another run time which is gaining poprulatrity dockercontainerd runtime.
+
+
+-----------------------
+k get deploy
+k autoscale deploy <deploy-name> --min=2 --max=5 --cpu-percent=10
+
+kind: Deployment
+spec:
+  replicas:4
+  minReadySeconds: 5
+  progressDeadlineSeconds: 600
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 50%
+      maxSurge: 2
+k rollout status deployments/hello-kubern8s
+k rollout undo deployments/hello-kubern8s
+
+k create configmap my-config --from-litral=MESSAGE="hello from first configmap"
+env:
+-name: MESSAGE
+ confiMapKeyRef:
+   name: my-config
+   key: MESSAGE
+
+k get configmaps
+k describe configmap my-config
+
+
+==================================================================================================
+==================================================================================================
+==================================================================================================
+
+CNSA
+
+ OPENSHIFT CONTAINER PLATFORM INSTALLATION OVERVIEW
+-----------------------------------------------------
+
+
+installer-provisioned infrastructure clusters
+
+user-provisioned infrastructure clusters
+
+After installation, each cluster machine uses Red Hat Enterprise Linux CoreOS (RHCOS) as the operating system. RHCOS is the immutable container host version of Red Hat Enterprise Linux (RHEL) and features a RHEL kernel with SELinux enabled by default. It includes the kubelet, which is the Kubernetes node agent, and the CRI-O container runtime, which is optimized for Kubernetes.
+
+[
+
+https://access.redhat.com/documentation/en-us/openshift_container_platform/4.8/html/installing/ocp-installation-overview
+
+You use three sets of files during installation: 
+1)an installation configuration file that is named install-config.yaml,
+2)Kubernetes manifests, and 
+3)Ignition config files for your machine types.
+
+
+]
+
+
+exercise
+---------
+1. it is assumed that the Red Hat OpenShift Container Platform is already installed.
+
+for OC 4.8
+==========
+
+Applying Machine Config Operator (MCO) Settings:
+
+oc apply -f https://raw.githubusercontent.com/IBM/ibm-spectrum-scale-container-native/v5.1.1.3/generated/mco/ocp4.8/mco_x86_64.yaml
+
+Verifying Machine Config Operator (MCO) Settings:
+
+ oc get MachineConfigPool
+
+Schedulable Control Plane Nodes:
+
+Verify that mastersSchedulable is set to true by entering the following command:
+
+oc get schedulers.config.openshift.io cluster -ojson | jq -r ".spec.mastersSchedulable"
+
+If this value is not true, patch the cluster by entering the following command:
+oc patch schedulers.config.openshift.io cluster --type='json' \
+-p='[{"op": "replace", "path": "/spec/mastersSchedulable", "value":true}]'
+
+
+IBM Cloud Container Registry (ICR) entitlement:
+------------------------------------------------
+Log in to the IBM container software library with an IBM id and a password. Click Get entitlement key on the left navigation bar. On the Access your container software page, click Copy key to copy the generated entitlement key. Save the key to a secure location for future use.
+
+Adding IBM Cloud Container Registry credentials:
+----------------------------------------------
+Create a base64 encoded string of the credentials used to access the image registry:
+echo -n "cp:REPLACE_WITH_GENERATED_ENTITLEMENT_KEY" | base64 -w0
+
+Create an authority.json to include the base64 encoded string of your credentials:
+
+{
+  "auth": "REPLACE_WITH_BASE64_ENCODED_KEY_FROM_PREVIOUS_STEP",
+  "username":"cp",
+  "password":"REPLACE_WITH_GENERATED_ENTITLEMENT_KEY"
+}
+
+The following step takes the authority.json and include it as a new authority in your .dockerconfigjson, stored as a temp_config.json.:
+
+oc get secret/pull-secret -n openshift-config -ojson | \
+jq -r '.data[".dockerconfigjson"]' | \
+base64 -d - | \
+jq '.[]."cp.icr.io" += input' - authority.json > temp_config.json
+
+To verify that your authority credentials were created in the resulting file:
+ # cat temp_config.json
+   {
+      "auths": {
+         "quay.io": {
+           "auth": "",
+           "email": ""
+         },
+         "registry.connect.redhat.com": {
+            "auth": "",
+            "email": ""
+         },
+         "registry.redhat.io": {
+            "auth": "",
+            "email": ""
+         },
+         "cp.icr.io": {
+            "auth": "REPLACE_WITH_BASE64_ENCODED_KEY_FROM_PREVIOUS_STEP",
+            "username": "cp",
+            "password": "REPLACE_WITH_GENERATED_ENTITLEMENT_KEY"
+         }
+      }
+   }
+
+Use the contents of the temp_config.json file, and apply the updated config to the OpenShift cluster:
+
+oc set data secret/pull-secret -n openshift-config --from-file=.dockerconfigjson=temp_config.json
+
+To verify that your pull-secret is updated with your new authority:
+
+oc get secret/pull-secret -n openshift-config -ojson | \
+jq -r '.data[".dockerconfigjson"]' | \
+base64 -d -
+
+ # oc get nodes
+
+When the global pull secret is updated, enter the following command to remove the temporary files that were created.
+
+rm authority.json temp_config.json
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
